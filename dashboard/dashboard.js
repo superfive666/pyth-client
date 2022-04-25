@@ -7,6 +7,7 @@ class Prices
     this.reuse = [];
     this.fact  = [ 0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10 ];
   }
+
   send( msg, callback ) {
     let id = 0;
     if ( this.reuse.length > 0 ) {
@@ -21,17 +22,21 @@ class Prices
     msg.on_response = callback;
     this.req[id] = msg;
   }
+
   on_response( msg ) {
     this.reuse.push( msg.id );
     this.req[msg.id].on_response( msg );
   }
+
   on_notify( msg ) {
     this.sub[msg.params.subscription]( msg );
   }
+
   draw_cell( cell, txt, color ) {
     cell.textContent = txt;
     cell.style.color = color;
   }
+
   on_price( pxa, msg ) {
     let tab = document.getElementById( "prices" );
     let row = tab.rows[pxa.idx];
@@ -62,6 +67,7 @@ class Prices
     row.cells[col++].style.color = color;
     row.cells[col++].style.color = color;
   }
+  
   get_price( sym, msg ) {
     let sub_id = msg.result.subscription;
     while( sub_id < this.sub.length ) {
@@ -69,12 +75,14 @@ class Prices
     }
     this.sub[sub_id] = this.on_price.bind( this, sym );
   }
+
   get_title( att, title ) {
     let td = document.createElement( 'TD' )
     td.textContent = att[title]
     td.style['text-align'] = 'left';
     return td;
   }
+
   get_product_list( res ) {
     let tab = document.getElementById( "prices" );
     let k = 1;
@@ -124,22 +132,26 @@ class Prices
 
 let ws = null;
 let px = null;
+
 window.onload = function() {
-  ws = new WebSocket('ws://localhost:8910')
+  ws = new WebSocket('ws://18.139.255.25:8910')
   px = new Prices
-  ws.onopen = function(e) {
+
+  ws.onopen = function() {
     let n = document.getElementById('notify');
     n.textContent = 'connected';
     px.send( { 'method': 'get_product_list' },
              px.get_product_list.bind( px ) );
   };
-  ws.onclose = function(e) {
+
+  ws.onclose = function() {
     let n = document.getElementById('notify');
     n.textContent = 'disconnectd';
     n.style.backgroundColor = 'red';
     let hdr = document.getElementById('prices_div');
     hdr.style.backgroundColor = 'red';
   }
+
   ws.onmessage = function(e) {
     let msg = JSON.parse(e.data);
     if ( 'id' in msg ) {
