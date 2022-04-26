@@ -134,7 +134,7 @@ let ws = null;
 let px = null;
 
 window.onload = function() {
-  ws = new WebSocket('ws://18.139.255.25:8910')
+  ws = new WebSocket('ws://52.220.220.53:8910')
   px = new Prices
 
   ws.onopen = function() {
