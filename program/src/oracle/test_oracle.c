@@ -1,8 +1,11 @@
 char heap_start[8192];
 #define PC_HEAP_START (heap_start)
 #include "oracle.c"
-#include "sort.c"
 #include <criterion/criterion.h>
+
+uint64_t MAPPING_ACCOUNT_LAMPORTS = 143821440;
+uint64_t PRODUCT_ACCOUNT_LAMPORTS = 4454400;
+uint64_t PRICE_ACCOUNT_LAMPORTS = 23942400;
 
 Test(oracle, init_mapping) {
 
@@ -30,7 +33,7 @@ Test(oracle, init_mapping) {
       .executable  = false
   },{
       .key         = &mkey,
-      .lamports    = &pqty,
+      .lamports    = &MAPPING_ACCOUNT_LAMPORTS,
       .data_len    = sizeof( pc_map_table_t ),
       .data        = (uint8_t*)mptr,
       .owner       = &p_id,
@@ -96,7 +99,7 @@ Test(oracle, add_mapping ) {
   SolPubkey pkey = {.x = { 1, }};
   SolPubkey tkey = {.x = { 2, }};
   SolPubkey mkey = {.x = { 3, }};
-  uint64_t pqty = 100, tqty = 100;
+  uint64_t pqty = 100;
   pc_map_table_t mptr[1];
   sol_memset( mptr, 0, sizeof( pc_map_table_t ) );
   SolAccountInfo acc[] = {{
@@ -111,7 +114,7 @@ Test(oracle, add_mapping ) {
       .executable  = false
   },{
       .key         = &tkey,
-      .lamports    = &pqty,
+      .lamports    = &MAPPING_ACCOUNT_LAMPORTS,
       .data_len    = sizeof( pc_map_table_t ),
       .data        = (uint8_t*)tptr,
       .owner       = &p_id,
@@ -121,7 +124,7 @@ Test(oracle, add_mapping ) {
       .executable  = false
   },{
       .key         = &mkey,
-      .lamports    = &tqty,
+      .lamports    = &MAPPING_ACCOUNT_LAMPORTS,
       .data_len    = sizeof( pc_map_table_t ),
       .data        = (uint8_t*)mptr,
       .owner       = &p_id,
@@ -186,7 +189,7 @@ Test(oracle, add_product) {
       .executable  = false
   },{
       .key         = &mkey,
-      .lamports    = &pqty,
+      .lamports    = &MAPPING_ACCOUNT_LAMPORTS,
       .data_len    = sizeof( pc_map_table_t ),
       .data        = (uint8_t*)mptr,
       .owner       = &p_id,
@@ -196,7 +199,7 @@ Test(oracle, add_product) {
       .executable  = false
   },{
       .key         = &skey,
-      .lamports    = &pqty,
+      .lamports    = &PRODUCT_ACCOUNT_LAMPORTS,
       .data_len    = PC_PROD_ACC_SIZE,
       .data        = (uint8_t*)sptr,
       .owner       = &p_id,
@@ -259,7 +262,7 @@ Test( oracle, add_publisher ) {
   SolPubkey p_id  = {.x = { 0xff, }};
   SolPubkey pkey = {.x = { 1, }};
   SolPubkey skey = {.x = { 3, }};
-  uint64_t pqty = 100, sqty = 200;
+  uint64_t pqty = 100;
   pc_price_t sptr[1];
   sol_memset( sptr, 0, sizeof( pc_price_t ) );
   sptr->magic_ = PC_MAGIC;
@@ -278,7 +281,7 @@ Test( oracle, add_publisher ) {
       .executable  = false
   },{
       .key         = &skey,
-      .lamports    = &sqty,
+      .lamports    = &pqty,
       .data_len    = sizeof( pc_price_t ),
       .data        = (uint8_t*)sptr,
       .owner       = &p_id,
@@ -294,6 +297,13 @@ Test( oracle, add_publisher ) {
     .data_len   = sizeof( idata ),
     .program_id = &p_id
   };
+
+  // Expect the instruction to fail, because the price account isn't rent exempt
+  cr_assert( ERROR_INVALID_ARGUMENT == dispatch( &prm, acc ) );
+
+  // Now give the price account enough lamports to be rent exempt
+  acc[1].lamports = &PRICE_ACCOUNT_LAMPORTS;
+  
   cr_assert( SUCCESS == dispatch( &prm, acc ) );
   cr_assert( sptr->num_ == 1 );
   cr_assert( pc_pub_key_equal( &idata.pub_, &sptr->comp_[0].pub_ ) );
@@ -337,6 +347,69 @@ Test(oracle, pc_size ) {
       PC_COMP_SIZE * sizeof( pc_price_comp_t ) );
 }
 
+Test( oracle, upd_test ) {
+  
+  // Initialize the test account
+  SolPubkey p_id  = {.x = { 0xff, }};
+  SolPubkey pkey = {.x = { 1, }};
+  SolPubkey mkey = {.x = { 2, }};
+  uint64_t pqty = 100;
+  pc_map_table_t mptr[1];
+  sol_memset( mptr, 0, sizeof( pc_price_t ) );
+  SolAccountInfo acc[] = {{
+      .key         = &pkey,
+      .lamports    = &pqty,
+      .data_len    = 0,
+      .data        = NULL,
+      .owner       = NULL,
+      .rent_epoch  = 0,
+      .is_signer   = true,
+      .is_writable = true,
+      .executable  = false
+  },{
+      .key         = &mkey,
+      .lamports    = &PRICE_ACCOUNT_LAMPORTS,
+      .data_len    = sizeof( pc_price_t ),
+      .data        = (uint8_t*)mptr,
+      .owner       = &p_id,
+      .rent_epoch  = 0,
+      .is_signer   = true,
+      .is_writable = true,
+      .executable  = false
+  }};
+  cmd_hdr_t hdata = {
+    .ver_ = PC_VERSION,
+    .cmd_ = e_cmd_init_test,
+  };
+  SolParameters prm = {
+    .ka         = acc,
+    .ka_num     = 2,
+    .data       = (const uint8_t*)&hdata,
+    .data_len   = sizeof( hdata ),
+    .program_id = &p_id
+  };
+  cr_assert( SUCCESS == dispatch( &prm, acc ) );
+
+  // Try and send an upd_test instruction with an invalid num_ parameter
+  cmd_upd_test_t idata = {
+    .ver_ = PC_VERSION,
+    .cmd_ = e_cmd_upd_test,
+    .num_ = PC_COMP_SIZE + 1,
+    .expo_ = -8,
+    .slot_diff_ = {1, 1},
+    .price_ = {10, 10},
+    .conf_ = {20, 20}
+    };
+  prm.data = (const uint8_t*)&idata;
+  prm.data_len = sizeof( idata );
+  cr_assert( ERROR_INVALID_ARGUMENT == dispatch( &prm, acc ) );
+
+  // Send an upd_test instruction with a valid num_ parameter
+  idata.num_ = 2;
+  cr_assert( SUCCESS == dispatch( &prm, acc ) );
+
+}
+
 Test( oracle, upd_price ) {
   cmd_upd_price_t idata = {
     .ver_    = PC_VERSION,
@@ -373,7 +446,7 @@ Test( oracle, upd_price ) {
       .executable  = false
   },{
       .key         = &skey,
-      .lamports    = &sqty,
+      .lamports    = &PRICE_ACCOUNT_LAMPORTS,
       .data_len    = sizeof( pc_price_t ),
       .data        = (uint8_t*)sptr,
       .owner       = &p_id,
@@ -484,7 +557,7 @@ Test( oracle, upd_price_no_fail_on_error ) {
       .executable  = false
   },{
       .key         = &skey,
-      .lamports    = &sqty,
+      .lamports    = &PRICE_ACCOUNT_LAMPORTS,
       .data_len    = sizeof( pc_price_t ),
       .data        = (uint8_t*)sptr,
       .owner       = &p_id,
@@ -581,9 +654,9 @@ Test( oracle, upd_aggregate ) {
   px->comp_[px->num_++].latest_ = p2;
   px->comp_[px->num_++].latest_ = p1;
   upd_aggregate( px, 1001, 2 );
-  cr_assert( px->agg_.price_ == 147 );
-  cr_assert( px->agg_.conf_ == 48 );
-  cr_assert( px->twap_.val_ == 108 );
+  cr_assert( px->agg_.price_ == 145 );
+  cr_assert( px->agg_.conf_ == 55 );
+  cr_assert( px->twap_.val_ == 106 );
   cr_assert( px->twac_.val_ == 16 );
   cr_assert( px->num_qt_ == 2 );
   cr_assert( px->timestamp_ == 2 );
@@ -600,15 +673,15 @@ Test( oracle, upd_aggregate ) {
   px->comp_[px->num_++].latest_ = p1;
   px->comp_[px->num_++].latest_ = p3;
   upd_aggregate( px, 1001, 3 );
-  cr_assert( px->agg_.price_ == 191 );
-  cr_assert( px->agg_.conf_ == 74 );
-  cr_assert( px->twap_.val_ == 116 );
-  cr_assert( px->twac_.val_ == 22 );
+  cr_assert( px->agg_.price_ == 200 );
+  cr_assert( px->agg_.conf_ == 90 );
+  cr_assert( px->twap_.val_ == 114 );
+  cr_assert( px->twac_.val_ == 23 );
   cr_assert( px->num_qt_ == 3 );
   cr_assert( px->timestamp_ == 3 );
   cr_assert( px->prev_slot_ == 1000 );
-  cr_assert( px->prev_price_ == 147 );
-  cr_assert( px->prev_conf_ == 48 );
+  cr_assert( px->prev_price_ == 145 );
+  cr_assert( px->prev_conf_ == 55 );
   cr_assert( px->prev_timestamp_ == 2 );
 
   // four publishers
@@ -620,16 +693,16 @@ Test( oracle, upd_aggregate ) {
   px->comp_[px->num_++].latest_ = p4;
   px->comp_[px->num_++].latest_ = p2;
   upd_aggregate( px, 1001, 4 );
-  cr_assert( px->agg_.price_ == 235 );
-  cr_assert( px->agg_.conf_ == 99 );
-  cr_assert( px->twap_.val_ == 124 );
-  cr_assert( px->twac_.val_ == 27 );
+  cr_assert( px->agg_.price_ == 245 );
+  cr_assert( px->agg_.conf_ == 85 );
+  cr_assert( px->twap_.val_ == 125 );
+  cr_assert( px->twac_.val_ == 28 );
   cr_assert( px->last_slot_ == 1001 );
   cr_assert( px->num_qt_ == 4 );
   cr_assert( px->timestamp_ == 4 );
   cr_assert( px->prev_slot_ == 1000 );
-  cr_assert( px->prev_price_ == 191 );
-  cr_assert( px->prev_conf_ == 74 );
+  cr_assert( px->prev_price_ == 200 );
+  cr_assert( px->prev_conf_ == 90 );
   cr_assert( px->prev_timestamp_ == 3 );
 
   upd_aggregate( px, 1025, 5 );
@@ -638,8 +711,8 @@ Test( oracle, upd_aggregate ) {
   cr_assert( px->num_qt_ == 4 );
   cr_assert( px->timestamp_ == 5 );
   cr_assert( px->prev_slot_ == 1001 );
-  cr_assert( px->prev_price_ == 235 );
-  cr_assert( px->prev_conf_ == 99 );
+  cr_assert( px->prev_price_ == 245 );
+  cr_assert( px->prev_conf_ == 85 );
   cr_assert( px->prev_timestamp_ == 4 );
 
   // check what happens when nothing publishes for a while
@@ -682,7 +755,7 @@ Test( oracle, del_publisher ) {
   };
   SolPubkey pkey = {.x = { 1, }};
   SolPubkey skey = {.x = { 3, }};
-  uint64_t pqty = 100, sqty = 200;
+  uint64_t pqty = 100;
   pc_price_t sptr[1];
   sol_memset( sptr, 0, sizeof( pc_price_t ) );
   sptr->magic_ = PC_MAGIC;
@@ -705,7 +778,7 @@ Test( oracle, del_publisher ) {
       .executable  = false
   },{
       .key         = &skey,
-      .lamports    = &sqty,
+      .lamports    = &PRICE_ACCOUNT_LAMPORTS,
       .data_len    = sizeof( pc_price_t ),
       .data        = (uint8_t*)sptr,
       .owner       = (SolPubkey*)&p_id,
