@@ -98,6 +98,7 @@ static void upd_ema(
     pd_set( denom, cwgt );
   } else {
     // compute decay factor
+    // decay factor is derived as: -log(2)/5921 * nslot + 1
     pd_new( diff, nslot, 0 );
     pd_new( decay, PD_EMA_DECAY, PD_EMA_EXPO );
     pd_mul( decay, decay, diff );
@@ -112,6 +113,10 @@ static void upd_ema(
       pd_set( denom, one );
     }
     else {
+      // cwgt: 1 / confidence
+      // wval: val / confidence
+      // numer[n+1] = numer[n] * decay + val / confidence
+      // denom[n+1] = denom[n] * decay + 1 / confidence
       pd_mul( numer, numer, decay );
       pd_mul( wval, val, cwgt );
       pd_add( numer, numer, wval, qs->fact_ );

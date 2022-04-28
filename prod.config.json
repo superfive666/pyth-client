@@ -1,0 +1,12 @@
+{
+  "name": "pythd-server",
+  "version": "0.0.1-SNAPSHOT",
+  "script": "./build/pythd",
+  "args": [
+    "-k $KHOST",
+    "-r $RHOST",
+    "-w ./dashboard"
+  ],
+  "exec_interpreter": "",
+  "exec_mode": "fork"
+}
